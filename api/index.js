@@ -1,51 +1,56 @@
+import { GoogleGenAI } from "@google/genai";
+
 export default async function handler(req, res) {
-    // Configuración de CORS
+    // CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
 
     const prompt = req.query.prompt || req.body?.prompt;
+    const system = req.query.system || req.body?.system;
+    const format = req.query.format || req.body?.format || 'text'; // 'text' o 'json'
 
     if (!prompt) {
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         return res.status(400).send("Falta el parámetro 'prompt'");
     }
 
     try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${process.env.GEMINI_API_KEY}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{ text: prompt }]
-                    }],
-                    generationConfig: {
-                        maxOutputTokens: 1024,
-                        temperature: 0.7
-                    }
-                })
-            }
-        );
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-        if (!response.ok) {
-            return res.status(response.status).send("Error de Gemini API");
+        const config = {
+            maxOutputTokens: 2048,
+            temperature: 0.7,
+            topP: 0.95
+        };
+
+        if (system) {
+            config.systemInstruction = system;
         }
 
-        const data = await response.json();
-        let text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sin respuesta";
+        const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: prompt,
+            config
+        });
 
-        // Limpieza rápida: eliminamos los acentos graves (`) que causan cuadros grises en Discord
-        const cleanText = text.replace(/`/g, "").trim();
+        const text = response.text || "";
 
-        // Enviamos SOLO el texto, no un objeto JSON
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.status(200).send(cleanText);
+        // Devolver texto plano por defecto, JSON si se pide explícitamente
+        if (format === 'json') {
+            res.setHeader('Content-Type', 'application/json');
+            return res.status(200).json({ response: text });
+        } else {
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            return res.status(200).send(text);
+        }
 
     } catch (error) {
-        res.status(500).send("Error interno: " + error.message);
+        console.error("Gemini Error:", error);
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return res.status(500).send("Error: " + (error.message || String(error)));
     }
 }
