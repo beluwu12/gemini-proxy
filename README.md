@@ -1,85 +1,60 @@
 # 🤖 Gemini Proxy API
 
-Un proxy serverless para la API de Google Gemini 3.0 Flash, diseñado para integrarse con bots de Discord a través de NotSoBot.
+Proxy serverless para **Gemini 3 Flash Preview** (`gemini-3-flash-preview`), optimizado para bots de Discord vía NotSoBot.
 
 ## ✨ Características
 
-- **Modelo:** Gemini 3.0 Flash Preview (`gemini-3-flash-preview`)
-- **Despliegue:** Vercel (Serverless Functions)
-- **CORS habilitado:** Funciona desde cualquier origen
-- **Métodos soportados:** GET y POST
+- **Modelo:** `gemini-3-flash-preview`
+- **System Instructions:** Soporte opcional vía parámetro `system`
+- **Mejores prácticas Gemini 3:** Prompts concisos, respuestas directas
+- **CORS habilitado**
 
-## 🚀 API Endpoint
+## 🚀 Endpoint
 
 ```
-GET/POST https://tu-dominio.vercel.app/api?prompt=tu-pregunta
+GET/POST https://tu-dominio.vercel.app/api?prompt=pregunta&system=instrucción
 ```
 
-### Parámetros
+| Parámetro | Tipo   | Requerido | Descripción |
+|-----------|--------|-----------|-------------|
+| `prompt`  | string | ✅        | Tu pregunta |
+| `system`  | string | ❌        | Instrucción de sistema opcional |
 
-| Parámetro | Tipo   | Descripción                     |
-|-----------|--------|---------------------------------|
-| `prompt`  | string | La pregunta o instrucción para la IA |
-
-### Respuesta exitosa
+### Respuesta
 
 ```json
-{
-  "response": "La respuesta generada por Gemini..."
-}
+{ "response": "Respuesta de Gemini..." }
 ```
 
-### Respuesta de error
+## ⚙️ Setup en Vercel
 
-```json
-{
-  "error": "Descripción del error",
-  "detalle": "Información adicional"
-}
-```
+1. Importa el repo en [Vercel](https://vercel.com)
+2. Agrega variable: `GEMINI_API_KEY` = tu clave de [AI Studio](https://aistudio.google.com/)
+3. Deploy
 
-## ⚙️ Configuración en Vercel
-
-1. Importa este repositorio en [Vercel](https://vercel.com)
-2. Configura la variable de entorno:
-   - `GEMINI_API_KEY`: Tu clave de API de [Google AI Studio](https://aistudio.google.com/)
-3. Despliega el proyecto
-
-## 🎮 Uso en Discord (NotSoBot)
-
-Crea el comando con el siguiente tag en tu servidor:
+## 🎮 Comando NotSoBot
 
 ```
 .tag create gemini {javascript:
 const c=`{args:0}`.trim(),r=`{replycontent}`.trim();
-if(!c&&!r){console.log("⚠️ Escribe una pregunta o responde a un mensaje.")}
-else{fetch(`https://gemini-proxy-umber-two.vercel.app/api?prompt=${encodeURIComponent("responde de manera resumida: "+(r&&c?c+": "+r:r||c))}`)
-.then(x=>x.json()).then(d=>console.log(d.response||d.error||"⚠️ Error en la respuesta."))
-.catch(()=>console.log("❌ Error de conexión con el proxy."))}
+if(!c&&!r){console.log("⚠️ Escribe una pregunta.")}
+else{fetch(`https://gemini-proxy-umber-two.vercel.app/api?prompt=${encodeURIComponent(r&&c?c+": "+r:r||c)}`)
+.then(x=>x.json()).then(d=>console.log(d.response||d.error||"⚠️ Error."))
+.catch(()=>console.log("❌ Error de conexión."))}
 }
 ```
 
-### Ejemplos de uso:
-
-| Comando | Descripción |
-|---------|-------------|
-| `.gemini ¿Cuál es la capital de Francia?` | Pregunta directa |
-| `.gemini` (respondiendo a un mensaje) | Resume o responde sobre ese mensaje |
-| `.gemini explica esto:` (respondiendo) | Explica el contenido del mensaje |
-
-## 📁 Estructura del Proyecto
+## 📁 Estructura
 
 ```
 gemini-proxy/
-├── api/
-│   └── index.js      # Handler principal de la API
-├── .env.example      # Ejemplo de variables de entorno
-├── .gitignore
-├── package.json
-├── vercel.json       # Configuración de Vercel
-└── README.md
+├── api/index.js    # Handler principal
+├── vercel.json     # Config Vercel
+└── package.json
 ```
 
-## 📝 Licencia
+## � Mejores Prácticas Gemini 3
 
-MIT
+- **Instrucciones precisas:** Usa prompts directos y concisos
+- **Menos verbosidad:** El modelo da respuestas directas por defecto
+- **Contexto primero:** Coloca datos/contexto antes de la pregunta

@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-    // Permitir CORS para que funcione desde cualquier lugar
+    // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -8,14 +8,37 @@ export default async function handler(req, res) {
         return res.status(200).end();
     }
 
-    // Obtener el prompt (soporta GET y POST)
+    // Obtener parámetros (GET y POST)
     const prompt = req.query.prompt || req.body?.prompt;
+    const systemInstruction = req.query.system || req.body?.system;
 
     if (!prompt) {
         return res.status(400).json({
             error: "Falta el parámetro 'prompt'",
-            uso: "?prompt=tu pregunta aquí"
+            uso: "?prompt=tu pregunta"
         });
+    }
+
+    // Construir payload siguiendo mejores prácticas de Gemini 3:
+    // - Instrucciones precisas y concisas
+    // - El modelo es menos verboso por defecto
+    // - Contexto primero, instrucciones al final
+    const payload = {
+        contents: [{
+            parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+            maxOutputTokens: 2048,
+            temperature: 0.7,
+            topP: 0.95
+        }
+    };
+
+    // System instruction opcional para personalizar comportamiento
+    if (systemInstruction) {
+        payload.systemInstruction = {
+            parts: [{ text: systemInstruction }]
+        };
     }
 
     try {
@@ -24,15 +47,7 @@ export default async function handler(req, res) {
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{ text: prompt }]
-                    }],
-                    generationConfig: {
-                        maxOutputTokens: 1024,
-                        temperature: 0.7
-                    }
-                })
+                body: JSON.stringify(payload)
             }
         );
 
