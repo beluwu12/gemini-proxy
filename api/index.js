@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
     const prompt = req.query.prompt || req.body?.prompt;
     const system = req.query.system || req.body?.system;
-    const format = req.query.format || req.body?.format || 'text'; // 'text' o 'json'
+    const format = req.query.format || req.body?.format || 'text';
 
     if (!prompt) {
         return res.status(400).send("Falta el parámetro 'prompt'");
@@ -21,15 +21,15 @@ export default async function handler(req, res) {
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+        // System instruction: respuestas directas sin markdown
+        const defaultSystem = "Responde de forma directa y concisa. NO uses formato markdown, NO uses asteriscos, NO uses listas con viñetas, NO uses numeración. Escribe solo texto plano normal como si fuera una conversación casual.";
+
         const config = {
             maxOutputTokens: 2048,
             temperature: 0.7,
-            topP: 0.95
+            topP: 0.95,
+            systemInstruction: system || defaultSystem
         };
-
-        if (system) {
-            config.systemInstruction = system;
-        }
 
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
@@ -37,9 +37,18 @@ export default async function handler(req, res) {
             config
         });
 
-        const text = response.text || "";
+        let text = response.text || "";
 
-        // Devolver texto plano por defecto, JSON si se pide explícitamente
+        // Limpiar cualquier formato markdown residual
+        text = text
+            .replace(/\*\*/g, '')      // Quitar negritas
+            .replace(/\*/g, '')        // Quitar cursivas
+            .replace(/^#+\s/gm, '')    // Quitar headers
+            .replace(/^[-•]\s/gm, '')  // Quitar viñetas
+            .replace(/^\d+\.\s/gm, '') // Quitar listas numeradas
+            .replace(/`/g, '')         // Quitar code inline
+            .trim();
+
         if (format === 'json') {
             res.setHeader('Content-Type', 'application/json');
             return res.status(200).json({ response: text });
