@@ -1,7 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export default async function handler(req, res) {
     // CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -23,6 +21,9 @@ export default async function handler(req, res) {
     }
 
     try {
+        // Inicializar dentro del handler para evitar cold start issues
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
         const config = {
             maxOutputTokens: 2048,
             temperature: 0.7,
@@ -48,9 +49,10 @@ export default async function handler(req, res) {
         }
 
     } catch (error) {
+        console.error("Gemini Error:", error);
         res.status(500).json({
             error: "Error de Gemini API",
-            detalle: error.message
+            detalle: error.message || String(error)
         });
     }
 }
