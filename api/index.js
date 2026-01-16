@@ -1,68 +1,95 @@
-const express = require('express');
 const { GoogleGenAI } = require('@google/genai');
 
-const app = express();
+// --- CONFIG ---
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-app.use(express.json());
-
-// CORS manual simple
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    next();
-});
-
-const config = {
-    geminiKey: process.env.GEMINI_API_KEY,
-};
-
-// Volatile Memory Map
+// --- VOLATILE MEMORY ---
+// Nota: Se reinicia con cada cold start
 const sessions = new Map();
 
-// Helper context (simplified)
 function getContext(id) {
     if (!sessions.has(id)) sessions.set(id, []);
     return sessions.get(id);
 }
 
-app.get('/health', (req, res) => res.json({ status: "healthy_minimal" }));
+// --- HANDLER NATIVO VERCEL ---
+module.exports = async (req, res) => {
+    // 1. CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-app.all('/api*', async (req, res) => {
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
+    const path = req.url.split('?')[0];
+
+    // 2. Health Check
+    if (path.includes('/health')) {
+        return res.status(200).json({ status: "healthy_native", sessions: sessions.size });
+    }
+
+    // 3. API Logic
     try {
         const prompt = req.query.prompt || req.body?.prompt;
         const sessionId = req.query.sessionId || req.body?.sessionId;
 
-        if (!prompt) return res.json({ error: "no prompt" });
+        if (!prompt) {
+            return res.status(400).json({ error: "Falta prompt" });
+        }
 
-        const ai = new GoogleGenAI({ apiKey: config.geminiKey });
+        const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
-        // Simple context handling
+        // Context Logic
         let fullPrompt = prompt;
+
         if (sessionId) {
             const history = getContext(sessionId);
+            // Formatear historial simple
             const contextStr = history.map(m => `${m.role}: ${m.text}`).join("\n");
-            fullPrompt = `History:\n${contextStr}\nUser: ${prompt}`;
 
-            // Save user msg
-            history.push({ role: 'User', text: prompt });
+            if (contextStr) {
+                fullPrompt = `Historial de chat previo:\n${contextStr}\n\nUsuario actual: ${prompt}`;
+            }
+
+            // Guardar mensaje usuario
+            history.push({ role: 'Usuario', text: prompt });
+            // Keep last 10
             if (history.length > 10) history.shift();
         }
 
-        const resp = await ai.models.generateContent({
+        // Call Gemini
+        const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
-            contents: fullPrompt
+            contents: fullPrompt,
+            config: {
+                maxOutputTokens: 2048,
+                temperature: 0.7
+            }
         });
 
-        const text = (resp.text || "").replace(/```/g, '').trim();
+        // Clean Response
+        let text = response.text || "";
+        text = text.replace(/```[\s\S]*?```/g, '') // Remove code blocks
+            .replace(/`/g, '')              // Remove inline code
+            .replace(/\*\*/g, '')           // Remove bold
+            .trim();
 
+        // Save AI response
         if (sessionId) {
-            getContext(sessionId).push({ role: 'AI', text });
+            getContext(sessionId).push({ role: 'Asistente', text });
         }
 
-        res.json({ response: text, sessionId });
+        // Return JSON
+        res.status(200).json({
+            response: text,
+            sessionId: sessionId,
+            ts: Date.now()
+        });
 
-    } catch (e) {
-        res.status(500).json({ error: e.toString() });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.toString() });
     }
-});
-
-module.exports = app;
+};
