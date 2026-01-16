@@ -1,95 +1,107 @@
-const { GoogleGenAI } = require('@google/genai');
+const { GoogleGenAI } = require("@google/genai");
 
-// --- CONFIG ---
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
-
-// --- VOLATILE MEMORY ---
-// Nota: Se reinicia con cada cold start
+// Simulación de Base de Datos en Memoria (Volátil en Serverless)
+// Se mantiene viva mientras la instancia de Vercel no se apague (aprox 15 mins de inactividad)
 const sessions = new Map();
 
-function getContext(id) {
-    if (!sessions.has(id)) sessions.set(id, []);
+// Helper para obtener/crear sesión
+const getSession = (id) => {
+    if (!sessions.has(id)) {
+        sessions.set(id, {
+            history: [],
+            lastActive: Date.now()
+        });
+    }
     return sessions.get(id);
-}
+};
 
-// --- HANDLER NATIVO VERCEL ---
-module.exports = async (req, res) => {
-    // 1. CORS
+export default async function handler(req, res) {
+    // 1. Configuración CORS (Permitir todo)
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
+    // Responder rápido a preflight checks
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
-    const path = req.url.split('?')[0];
-
-    // 2. Health Check
-    if (path.includes('/health')) {
-        return res.status(200).json({ status: "healthy_native", sessions: sessions.size });
-    }
-
-    // 3. API Logic
     try {
+        // 2. Extracción de Datos
+        // Soportamos tanto GET (query) como POST (body)
         const prompt = req.query.prompt || req.body?.prompt;
-        const sessionId = req.query.sessionId || req.body?.sessionId;
+        const sessionId = req.query.sessionId || req.body?.sessionId || 'default';
+        const systemInstruction = req.query.system || "Responde de forma concisa y directa. NO uses Markdown. Solo texto plano.";
 
         if (!prompt) {
-            return res.status(400).json({ error: "Falta prompt" });
+            return res.status(400).json({ error: "Falta el parámetro 'prompt'" });
         }
 
-        const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
+        // 3. Inicializar SDK de Gemini
+        // Usamos la variable de entorno configurada en Vercel
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-        // Context Logic
-        let fullPrompt = prompt;
+        // 4. Gestión de Memoria (Contexto)
+        const session = getSession(sessionId);
+        session.lastActive = Date.now(); // Actualizar timestamp
 
-        if (sessionId) {
-            const history = getContext(sessionId);
-            // Formatear historial simple
-            const contextStr = history.map(m => `${m.role}: ${m.text}`).join("\n");
+        // Convertir historial a formato compatible con Gemini SDK
+        // (Aunque para simplificar, a veces es mejor concatenar texto si el modelo es flash)
+        // Aquí concatenamos para asegurar robustez en el modelo "preview"
 
-            if (contextStr) {
-                fullPrompt = `Historial de chat previo:\n${contextStr}\n\nUsuario actual: ${prompt}`;
-            }
-
-            // Guardar mensaje usuario
-            history.push({ role: 'Usuario', text: prompt });
-            // Keep last 10
-            if (history.length > 10) history.shift();
+        let fullContext = "";
+        if (session.history.length > 0) {
+            fullContext = "Historial de conversación reciente:\n" +
+                session.history.map(m => `${m.role}: ${m.text}`).join("\n") +
+                "\n\n--- Nueva Interacción ---\n";
         }
 
-        // Call Gemini
+        const finalPrompt = `${fullContext}Usuario: ${prompt}\nAsistente:`;
+
+        // 5. Llamada a la IA
         const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
-            contents: fullPrompt,
+            contents: finalPrompt,
             config: {
-                maxOutputTokens: 2048,
+                systemInstruction: systemInstruction,
+                maxOutputTokens: 1000,
                 temperature: 0.7
             }
         });
 
-        // Clean Response
         let text = response.text || "";
-        text = text.replace(/```[\s\S]*?```/g, '') // Remove code blocks
-            .replace(/`/g, '')              // Remove inline code
-            .replace(/\*\*/g, '')           // Remove bold
+
+        // 6. Limpieza Agresiva de Markdown (Anti-NotSoBot Break)
+        // Quitamos bloques de código, negritas, etc. para que Discord lo muestre limpio.
+        text = text
+            .replace(/```[\s\S]*?```/g, '') // Eliminar bloques de código grandes
+            .replace(/```/g, '')             // Eliminar triple backtick suelto
+            .replace(/`/g, '')               // Eliminar backtick simple
+            .replace(/\*\*/g, '')            // Eliminar negritas
+            .replace(/^#+\s/gm, '')          // Eliminar headers markdown
             .trim();
 
-        // Save AI response
-        if (sessionId) {
-            getContext(sessionId).push({ role: 'Asistente', text });
+        // 7. Guardar en Memoria
+        session.history.push({ role: 'Usuario', text: prompt });
+        session.history.push({ role: 'Asistente', text: text });
+
+        // Mantener solo los últimos 10 mensajes para no saturar tokens
+        if (session.history.length > 20) {
+            session.history = session.history.slice(-10);
         }
 
-        // Return JSON
-        res.status(200).json({
+        // 8. Respuesta Final JSON
+        return res.status(200).json({
             response: text,
             sessionId: sessionId,
-            ts: Date.now()
+            contextSize: session.history.length / 2 // Pares de mensajes
         });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: error.toString() });
+        console.error("Error API:", error);
+        return res.status(500).json({
+            error: "Error interno del servidor",
+            details: error.message
+        });
     }
-};
+}

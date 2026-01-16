@@ -1,11 +1,7 @@
 {
-  "name": "gemini-proxy",
-  "version": "1.0.0",
-  "private": true,
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "@google/genai": "^1.0.0"
-  }
+    "name": "gemini-proxy",
+    "version": "1.0.0",
+    "dependencies": {
+        "@google/genai": "^1.0.0"
+    }
 }
