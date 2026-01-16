@@ -12,17 +12,19 @@ export default async function handler(req, res) {
 
     const prompt = req.query.prompt || req.body?.prompt;
     const system = req.query.system || req.body?.system;
-    const format = req.query.format || req.body?.format || 'text';
+
+    // Por defecto JSON para compatibilidad con el snippet que sugeriste
+    const format = req.query.format || req.body?.format || 'json';
 
     if (!prompt) {
-        return res.status(400).send("Falta el parámetro 'prompt'");
+        return res.status(400).json({ error: "Falta el parámetro 'prompt'" });
     }
 
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
         // System instruction: respuestas directas sin markdown
-        const defaultSystem = "Responde de forma directa y concisa. NO uses formato markdown, NO uses asteriscos, NO uses listas con viñetas, NO uses numeración. Escribe solo texto plano normal como si fuera una conversación casual.";
+        const defaultSystem = "Responde de forma directa y concisa. NO uses formato markdown. NO uses bloques de código. NO uses negritas. Escribe texto plano limpio.";
 
         const config = {
             maxOutputTokens: 2048,
@@ -39,27 +41,29 @@ export default async function handler(req, res) {
 
         let text = response.text || "";
 
-        // Limpiar cualquier formato markdown residual
+        // Limpieza agresiva de markdown para evitar romper el script del cliente
         text = text
+            .replace(/```/g, '')       // Quitar code blocks
             .replace(/\*\*/g, '')      // Quitar negritas
             .replace(/\*/g, '')        // Quitar cursivas
             .replace(/^#+\s/gm, '')    // Quitar headers
-            .replace(/^[-•]\s/gm, '')  // Quitar viñetas
-            .replace(/^\d+\.\s/gm, '') // Quitar listas numeradas
             .replace(/`/g, '')         // Quitar code inline
             .trim();
 
-        if (format === 'json') {
-            res.setHeader('Content-Type', 'application/json');
-            return res.status(200).json({ response: text });
-        } else {
+        if (format === 'text') {
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
             return res.status(200).send(text);
+        } else {
+            // Default: JSON { response: "texto" }
+            res.setHeader('Content-Type', 'application/json');
+            return res.status(200).json({ response: text });
         }
 
     } catch (error) {
         console.error("Gemini Error:", error);
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        return res.status(500).send("Error: " + (error.message || String(error)));
+        res.status(500).json({
+            error: "Error de Gemini API",
+            detalle: error.message || String(error)
+        });
     }
 }
