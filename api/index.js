@@ -1,9 +1,9 @@
 const express = require('express');
 const app = express();
-const config = require('../src/config/config');
-const aiRoutes = require('../src/routes/ai');
+const config = require('./src/config/config');
+const aiRoutes = require('./src/routes/ai');
 const swaggerUi = require('swagger-ui-express');
-const swaggerDocument = require('../public/swagger.json');
+const swaggerDocument = require('./public/swagger.json');
 
 // Middleware
 app.use(express.json());
